@@ -45,6 +45,15 @@ def create_app():
         from app.archive import build_archive
         run=store.get(run_id)
         return application.response_class(build_archive(run),mimetype="text/csv",headers={"Content-Disposition":'attachment; filename="evidence.csv"'})
+    @application.get("/api/runs/<run_id>/windows")
+    def run_windows(run_id):
+        from app import windows
+        run=store.get(run_id);rows=run["stages"][-1]["rows"]
+        return {"run_id":run["run_id"],"rule":windows.WINDOW_RULE,"timezone":(run.get("windows") or [{}])[0].get("timezone",""),"windows":run.get("windows") or windows.summarize(rows),"check":windows.validate(rows)}
+    @application.get("/api/windows")
+    def window_ledger():
+        from app import windows
+        return windows.ledger(store.all_runs())
     for index,(slug,title) in enumerate(MODULES,1):
         module=importlib.import_module(f"app.modules.m{index}_{slug}.handler")
         application.register_blueprint(module.bp)

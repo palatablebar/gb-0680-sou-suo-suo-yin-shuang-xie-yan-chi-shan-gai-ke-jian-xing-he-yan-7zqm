@@ -1,9 +1,9 @@
 import time
-from app.config import ROOT,MODULES
+from app.config import ROOT,MODULES,WINDOW_TIMEZONE
 from app.errors import DomainError
 from app.values import scalar
 from app.manifest import digest,manifest
-from app import store
+from app import store,windows
 from app.modules.m1_streams.rules import evaluate as stage1
 from app.modules.m2_schema.rules import evaluate as stage2
 from app.modules.m3_versions.rules import evaluate as stage3
@@ -13,10 +13,14 @@ from app.modules.m6_parity.rules import evaluate as stage6
 from app.modules.m7_backfills.rules import evaluate as stage7
 STAGES=[stage1,stage2,stage3,stage4,stage5,stage6,stage7]
 def load_sample(name):
-    if name not in {"dirty.csv","clean.csv","legacy.csv"}: raise DomainError("BAD_SAMPLE","样例不存在",404)
+    if name not in {"dirty.csv","clean.csv","legacy.csv","cutover.csv"}: raise DomainError("BAD_SAMPLE","样例不存在",404)
     return (ROOT/"sample_data"/name).read_bytes()
 def calculate(raw,params=None,stop=6):
-    params=params or {};started=time.monotonic();context={"parameters":params,"raw":raw,"quarantine":[]};stages=[];rows=[]
+    params=dict(params or {})
+    # 归窗时区是结论口径的一部分，固定写入参数并参与批次摘要：
+    # 同一批同参数必得同一窗口；口径变化必须产生新批次，不能覆盖旧结论。
+    params.setdefault("window_timezone",WINDOW_TIMEZONE)
+    started=time.monotonic();context={"parameters":params,"raw":raw,"quarantine":[]};stages=[];rows=[]
     for index,stage in enumerate(STAGES[:stop+1]):
         result=stage(raw if index==0 else rows,context)
         result=scalar(result);rows=result["rows"]
@@ -25,7 +29,9 @@ def calculate(raw,params=None,stop=6):
         result["cumulative_quarantine"]=list(context["quarantine"])
         context[MODULES[index][0]]=result
         stages.append(result)
-    return {"run_id":digest(raw,params)[:20],"stages":stages,"manifest":manifest(raw,params,started),"parameters":params}
+    payload={"run_id":digest(raw,params)[:20],"stages":stages,"manifest":manifest(raw,params,started),"parameters":params}
+    if len(stages)>4: payload["windows"]=windows.summarize(stages[3]["rows"])
+    return payload
 def execute(raw,params=None):
     result=calculate(raw,params);return store.save(result["run_id"],result)
 def stage_preview(index,payload):

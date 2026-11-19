@@ -31,6 +31,19 @@
 | TRAP-09 | 超大版本 | JSON精度损失 | 文本序列化 | `app/values.py` | `tests/test_m2.py::test_large_version_precise` |
 | TRAP-13 | 删除后迟到旧写 | 文档复活 | 最大版本墓碑 | `app/modules/m3_versions/rules.py` | `tests/test_m3.py::test_tombstone_beats_late_old_write` |
 | TRAP-23 | 延迟阈值边界 | 多判延迟 | 等于阈值通过 | `app/modules/m5_latency/rules.py` | `tests/test_m5.py::test_threshold_equal_pass` |
+| TRAP-27 | 凌晨关账跨日重放 | 按发生日或到达日归窗，漏掉跨日可见或两天各计一次 | 按文档可观测结算日归窗，事件各归其业务日 | `app/windows.py` | `tests/test_windows.py` |
+
+## 核验窗口
+
+归窗口径 `observable-settlement-v1`：文档的核验窗口取该文档全部有效事件中最晚的可观测时刻（`visible_time` 优先，否则 `source_time`）所在业务日；业务日按 `window_timezone` 划分，区间 `[start,end)`。窗口只由事件时间戳推导，不读文件到达日或批次标签，因此：
+
+- 跨日才可见的文档归入可见当日，结论不漏；
+- 迟到旧事件的业务日由自身时间戳决定，不在到达日重复计入；
+- 每篇文档归一个窗口、每个事件归一个业务日，同一事件不跨窗重复；
+- 同输入同参数同批窗口与结论一致，重跑不新增窗口；
+- `window_basis`、`window_event_windows`、`window_events`、`window_sources` 保留逐篇归窗依据。
+
+M4 产出文档级窗口字段，M5/M6 原样透传，M7 与归档复用 `windows.validate`/`windows.summarize`，跨窗或漏窗拒绝封存。页面“核验窗口”面板与归档 `window` 行同源。
 
 ## 对账规则
 

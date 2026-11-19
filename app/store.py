@@ -15,12 +15,16 @@ def save(run_id,payload):
 def get(run_id):
     with connect() as db: row=db.execute("SELECT payload,version,decision FROM runs WHERE id=?",(run_id,)).fetchone()
     if not row: raise DomainError("NOT_FOUND","批次不存在",404)
-    return {**json.loads(row[0]),"version":row[1],"decision":row[2]}
+    from app import windows
+    return {**windows.rehydrate(json.loads(row[0])),"version":row[1],"decision":row[2]}
 def latest():
     with connect() as db: row=db.execute("SELECT id FROM runs ORDER BY rowid DESC LIMIT 1").fetchone()
     return get(row[0]) if row else None
 def history():
     with connect() as db: return [{"run_id":i,"version":v,"decision":d} for i,v,d in db.execute("SELECT id,version,decision FROM runs ORDER BY rowid DESC")]
+def all_runs():
+    from app import windows
+    with connect() as db: return [windows.rehydrate(json.loads(p)) for (p,) in db.execute("SELECT payload FROM runs ORDER BY rowid")]
 def review(run_id,version,decision):
     if decision not in {"已复核","退回复核"}: raise DomainError("BAD_DECISION","复核状态无效")
     with connect() as db:
